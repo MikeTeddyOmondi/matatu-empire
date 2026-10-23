@@ -340,16 +340,22 @@ local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): V
 		end
 	end
 
-	-- Movers. Plane mode leaves the chassis's up axis free, so gravity and kerbs still work.
+	-- Movers. With RelativeTo = Attachment0, a plane-mode LinearVelocity ignores
+	-- Primary/SecondaryTangentAxis and uses the attachment's own axes instead: its X axis
+	-- (Axis) is PlaneVelocity.X and its Y axis (SecondaryAxis) is PlaneVelocity.Y. So the
+	-- attachment is rotated to X = right, Y = forward (the chassis's -Z). That leaves the
+	-- chassis's up axis free, so gravity and kerbs still work.
 	local rootAttachment = attachment(chassis, CFrame.new(), "Root")
+	local planeAttachment =
+		attachment(chassis, CFrame.fromMatrix(Vector3.zero, Vector3.xAxis, -Vector3.zAxis), "DrivePlane")
 	local drive = Instance.new("LinearVelocity")
 	drive.Name = "Drive"
-	drive.Attachment0 = rootAttachment
+	drive.Attachment0 = planeAttachment
 	drive.RelativeTo = Enum.ActuatorRelativeTo.Attachment0
 	drive.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
-	drive.PrimaryTangentAxis = Vector3.xAxis -- sideways (kept at 0: no sliding)
-	drive.SecondaryTangentAxis = -Vector3.zAxis -- forward
-	drive.PlaneVelocity = Vector2.zero
+	drive.ForceLimitsEnabled = true
+	drive.ForceLimitMode = Enum.ForceLimitMode.Magnitude
+	drive.PlaneVelocity = Vector2.zero -- X = sideways (kept at 0: no sliding), Y = forward speed
 	drive.MaxForce = 0 -- set once the assembly mass is known
 	drive.Parent = chassis
 
