@@ -2,7 +2,7 @@
 
 Drive a matatu, tout for passengers at the stage, carry them along the route, get paid, and pimp your ride.
 
-This is the **Phase 1–2 prototype** from the design doc: one route between two stages, three matatu tiers, the five Vibe upgrade slots, touting, server-validated fares, levels, a day/night cycle with rush hours, and saving. The city is generated in code, so you can open the place and press Play straight away.
+This is the **Phase 1–2 prototype** from the design doc: a generated Nairobi (CBD out to Westlands, Parklands, Eastleigh, Upper Hill, Kilimani, Ngong Road, Kibera and Kawangware) with 10 stages and 24 routes, three matatu tiers, the five Vibe upgrade slots, touting, server-validated fares, levels, a day/night cycle with rush hours, and saving. The city is generated in code, so you can open the place and press Play straight away.
 
 ## Quick start (no tooling)
 
@@ -10,7 +10,7 @@ This is the **Phase 1–2 prototype** from the design doc: one route between two
 2. Press **Play**.
 3. Click **Get matatu**. You spawn in the driver's seat at CBD Stage.
 4. Press **T** to tout. Hit **T**, **E** or the SHOUT button each time the pink ring lands on the yellow one.
-5. Follow the yellow beacon to Estates Stage, stop inside the coloured ring, and you get paid.
+5. Press **Y** to pick where you're going, follow the yellow beacon (and the minimap) to that stage, stop inside the coloured ring, and you get paid.
 6. Press **G** for the garage to buy upgrades and new matatus.
 
 To test saving, publish the place, then turn on **Game Settings → Security → Enable Studio Access to API Services**. Without it, the game runs with in-memory profiles and warns in the output.
@@ -52,6 +52,8 @@ For type checking in VS Code, install the **Luau Language Server** extension. Th
 | Shout (during touting) | T or E | SHOUT button |
 | Garage | G | Garage button |
 | Horn | H | Horn button |
+| Pick route (next destination) | Y | Route button |
+| Minimap: small / large / hidden | M | Tap the map |
 | Get out | Space | Jump button |
 | Get back in | F (walk up to your matatu) | Tap the Drive prompt (gamepad: Y) |
 | Unstick (reset onto the road) | R | Unstick button (gamepad: D-pad up) |
@@ -98,3 +100,11 @@ The client never sends amounts. The server:
 - **Audio.** Paste licensed sound asset ids into `HORN_SOUND_ID` and `MUSIC_SOUND_ID` in `VehicleService.luau`.
 - **Art.** Swap the generated box matatu for a Blender mesh. Keep the `Chassis`, `Body` and `DriverSeat` names, or update `buildMatatu`.
 - **Next phases:** Highway district and hired NPC drivers, then saccos and route wars, then rebirth and events (see the design doc).
+
+## The map
+
+`src/shared/Config/Nairobi.luau` holds the geography: junctions as real latitude/longitude (approximate), roads as lists of junctions, districts with a building style, stages, routes and landmarks. `Config/World.luau` turns that into studs (260 per km), builds the road graph and finds each route's path. `src/server/City/` generates the city from it at server start.
+
+To add a road, add its junctions to `Nodes` and an entry to `Roads`. To add a stage, put a node on a road, add it to `Stages` and pair it in `Routes`. `just test` checks every stage is reachable, every route has a return, and shelters and spawns sit where they should.
+
+![Road network](assets/nairobi-map.png)

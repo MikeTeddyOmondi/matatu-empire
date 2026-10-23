@@ -18,7 +18,7 @@ local Hud = require(script.Parent.Hud)
 local Tout = {}
 
 local player = Players.LocalPlayer
-local SHOUTS = { "Tao! Tao!", "Estates, mbili mbili!", "Panda gari!", "Ingia ingia!", "Tunaenda!" }
+local SHOUTS = { "Tao! Tao!", "Westie, mbili mbili!", "Kawangware! Kawangware!", "Ngong Road, fifty bob!", "Panda gari!", "Ingia ingia!", "Tunaenda!" }
 
 local gui: ScreenGui
 local panel: Frame

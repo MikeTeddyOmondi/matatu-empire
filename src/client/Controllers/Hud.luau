@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Net = require(Shared.Net)
 local Types = require(Shared.Types)
+local World = require(Shared.Config.World)
 
 local UI = require(script.Parent.UI)
 local State = require(script.Parent.State)
@@ -145,8 +146,8 @@ function Hud.start()
 
 	-- Action buttons (right side) — also work as tap targets on mobile.
 	local actions = UI.create("Frame", {
-		Size = UDim2.fromOffset(170, 230),
-		Position = UDim2.new(1, -182, 0.5, -115),
+		Size = UDim2.fromOffset(170, 286),
+		Position = UDim2.new(1, -182, 0.5, -143),
 		BackgroundTransparency = 1,
 		Parent = gui,
 	}, {
@@ -184,6 +185,15 @@ function Hud.start()
 		LayoutOrder = 4,
 		Parent = actions,
 	})
+	local routeButton = UI.button({
+		Size = UDim2.new(1, 0, 0, 48),
+		Text = "Route: auto  [Y]",
+		BackgroundColor3 = UI.Colors.accent,
+		TextSize = 14,
+		TextWrapped = true,
+		LayoutOrder = 5,
+		Parent = actions,
+	})
 
 	toastList = UI.create("Frame", {
 		Size = UDim2.fromOffset(320, 300),
@@ -218,6 +228,60 @@ function Hud.start()
 		Net.event("Horn"):FireServer()
 	end)
 
+	-- Route picker: cycles through the unlocked destinations from the stage you're at (or the
+	-- nearest one), so you choose where the next passengers are going.
+	local choosing = false
+	local function nearestStage(): string?
+		local state = State.get()
+		if state and state.atStage then
+			return state.atStage
+		end
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if not root then
+			return nil
+		end
+		local best, bestDistance = nil, math.huge
+		for id, stage in World.Stages do
+			local distance = (stage.position - root.Position).Magnitude
+			if distance < bestDistance then
+				best, bestDistance = id, distance
+			end
+		end
+		return best
+	end
+	local function cycleRoute()
+		local state = State.get()
+		if choosing or not state then
+			return
+		end
+		if state.passengersAboard > 0 then
+			toast("Drop off your passengers before changing route", "warn")
+			return
+		end
+		local from = nearestStage()
+		if not from then
+			return
+		end
+		local options = {}
+		for _, route in World.routesFrom(from) do
+			if World.routeUnlocked(route, state.level) then
+				table.insert(options, route.to)
+			end
+		end
+		if #options == 0 then
+			toast(`No unlocked routes from {World.Stages[from].displayName} yet`, "warn")
+			return
+		end
+		local index = table.find(options, state.chosenDestination or "") or 0
+		local nextDestination = options[index % #options + 1]
+		choosing = true
+		local ok, message = Net.func("SelectRoute"):InvokeServer(nextDestination)
+		choosing = false
+		toast(`{message} (from {World.Stages[from].displayName})`, if ok then "info" else "warn")
+	end
+	routeButton.Activated:Connect(cycleRoute)
+
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if processed then
 			return
@@ -226,6 +290,8 @@ function Hud.start()
 			Hud.actions.garage()
 		elseif input.KeyCode == Enum.KeyCode.H then
 			Net.event("Horn"):FireServer()
+		elseif input.KeyCode == Enum.KeyCode.Y then
+			cycleRoute()
 		end
 	end)
 
@@ -235,6 +301,13 @@ function Hud.start()
 		xpFill.Size = UDim2.fromScale(math.clamp(state.xp / math.max(1, state.xpToNext), 0, 1), 1)
 		vibeLabel.Text = `Vibe {state.vibe} / 100`
 		spawnButton.Text = if state.hasVehicle then "Respawn matatu" else "Get matatu"
+		if state.passengersAboard > 0 and state.destination then
+			routeButton.Text = `To {state.destination}`
+		elseif state.chosenDestination and World.Stages[state.chosenDestination] then
+			routeButton.Text = `Route: {World.Stages[state.chosenDestination].displayName}  [Y]`
+		else
+			routeButton.Text = "Route: auto  [Y]"
+		end
 
 		if not state.hasVehicle then
 			tripPanel.Text = "Tap \"Get matatu\" to start your empire"
@@ -243,7 +316,11 @@ function Hud.start()
 		elseif state.passengersAboard > 0 and state.destination then
 			tripPanel.Text = `{state.passengersAboard}/{state.seats} aboard  ·  Drive to {state.destination}`
 		elseif state.atStage then
-			tripPanel.Text = "You're at a stage: press T to tout for passengers!"
+			local target = if state.chosenDestination then World.Stages[state.chosenDestination] else nil
+			local name = World.Stages[state.atStage].displayName
+			tripPanel.Text = if target and World.route(state.atStage, target.id)
+				then `{name}: press T to tout for {target.displayName}`
+				else `{name}: press T to tout (Y picks the route)`
 		else
 			tripPanel.Text = "Drive into a stage zone, stop, and tout"
 		end
