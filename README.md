@@ -32,10 +32,11 @@ To change the shape, edit `tools/make_matatu_mesh.py` and run `python3 tools/mak
 ## Developing with Rojo
 
 ```bash
-rokit install          # installs rojo, selene, stylua from rokit.toml
-rojo serve             # then click Connect in the Rojo Studio plugin
-rojo build -o MatatuEmpire.rbxl   # or build a fresh place file
-stylua src             # format
+rokit install   # installs rojo, selene, stylua, luau-lsp and just from rokit.toml
+just            # lists every project command
+just serve      # then click Rojo -> Connect in Studio
+just build      # builds MatatuEmpire.rbxl
+just ci         # format check, lint and type check
 ```
 
 For type checking in VS Code, install the **Luau Language Server** extension. The code is written in `--!strict` and passes `luau-lsp analyze` with no errors.

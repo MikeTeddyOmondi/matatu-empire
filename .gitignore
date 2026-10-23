@@ -6,3 +6,4 @@ ServerPackages/
 sourcemap.json
 **/*.DS_Store
 
+.luau-lsp/
