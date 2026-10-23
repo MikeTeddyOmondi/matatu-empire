@@ -1,9 +1,11 @@
 --!strict
 -- Waiting crowds, the touting minigame, trips and fares.
 --
--- A trip starts when passengers board at a stage. It pays only if the matatu passes every
--- checkpoint of the route in order, takes at least the route's minimum time, passes the speed
--- check, and stops inside the destination stage's zone. All of this is decided on the server.
+-- A trip starts when passengers board at a stage, bound for the destination the driver picked
+-- (or the first unlocked route from that stage). It pays when the matatu stops inside the
+-- destination's zone, having passed enough of the route's checkpoints in order
+-- (World.CheckpointShare; skipping ahead is fine), no faster than the route's minimum time, and
+-- without failing the speed check. All of this is decided on the server.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -19,6 +21,7 @@ type Trip = {
 	routeId: string?,
 	passengers: number,
 	nextCheckpoint: number,
+	visited: number,
 	startedAt: number,
 }
 
@@ -35,6 +38,7 @@ local services: any
 local trips: { [Player]: Trip } = {}
 local rounds: { [Player]: ActiveRound } = {}
 local lastToutAt: { [Player]: number } = {}
+local chosenDestination: { [Player]: string } = {}
 local nextRoundId = 0
 
 local crowdCounts: { [string]: number } = {}
@@ -64,7 +68,7 @@ end
 local function getTrip(player: Player): Trip
 	local trip = trips[player]
 	if not trip then
-		trip = { routeId = nil, passengers = 0, nextCheckpoint = 1, startedAt = 0 }
+		trip = { routeId = nil, passengers = 0, nextCheckpoint = 1, visited = 0, startedAt = 0 }
 		trips[player] = trip
 	end
 	return trip
@@ -74,6 +78,7 @@ local function resetTrip(trip: Trip)
 	trip.routeId = nil
 	trip.passengers = 0
 	trip.nextCheckpoint = 1
+	trip.visited = 0
 	trip.startedAt = 0
 end
 
@@ -81,12 +86,10 @@ end
 
 local function makeFigure(stageId: string, rng: Random): Model
 	local stage = World.Stages[stageId]
-	local center = stage.position + stage.crowdOffset
-	local alongX = math.abs(stage.crowdOffset.Z) >= math.abs(stage.crowdOffset.X)
-	local spreadA, spreadB = rng:NextNumber(-11, 11), rng:NextNumber(-4, 4)
-	local offset = if alongX then Vector3.new(spreadA, 0, spreadB) else Vector3.new(spreadB, 0, spreadA)
-	local base = center + offset
-	local facing = stage.position -- everyone watches the road
+	-- Spread along the shelter, everyone facing the road.
+	local spot = stage.shelterCFrame * CFrame.new(rng:NextNumber(-12, 12), World.RoadTop, rng:NextNumber(-4, 2))
+	local base = spot.Position
+	local facing = stage.position
 
 	local model = Instance.new("Model")
 	model.Name = "Passenger"
@@ -236,12 +239,15 @@ local function tripLoop()
 			local route = World.Routes[trip.routeId]
 			local position = services.VehicleService.position(record)
 
+			-- Count the next checkpoint reached in order; skipping ahead to a later one is fine
+			-- (you took a different lane, or went round a roundabout wide).
 			local checkpoints = route.checkpoints
-			if trip.nextCheckpoint <= #checkpoints then
-				local target = checkpoints[trip.nextCheckpoint]
-				if flatDistance(position, target) <= World.CheckpointRadius then
-					trip.nextCheckpoint += 1
+			for j = trip.nextCheckpoint, #checkpoints do
+				if flatDistance(position, checkpoints[j]) <= World.CheckpointRadius then
+					trip.visited += 1
+					trip.nextCheckpoint = j + 1
 					services.StateService.push(player)
+					break
 				end
 			end
 
@@ -250,8 +256,8 @@ local function tripLoop()
 				if record.flagged then
 					record.flagged = false
 					unloadUnpaid(player, "Passengers got off: this trip failed the speed check.")
-				elseif trip.nextCheckpoint <= #checkpoints then
-					unloadUnpaid(player, "Passengers got off unpaid: you skipped part of the route.")
+				elseif trip.visited < math.ceil(#checkpoints * World.CheckpointShare) then
+					unloadUnpaid(player, "Passengers got off unpaid: you didn't follow the route.")
 				elseif os.clock() - trip.startedAt < route.minTripSeconds then
 					unloadUnpaid(player, "That trip was impossibly fast. No fare.")
 				else
@@ -289,7 +295,17 @@ local function startTout(player: Player): (Types.ToutRound?, string?)
 		end
 	end
 	if trip.passengers >= record.tier.seats then
-		return nil, "You're full! Drive to the next stage"
+		return nil, "You're full! Drive to your destination"
+	end
+	if trip.passengers == 0 and not PassengerService.routeFor(player, stageId) then
+		local level = (services.PlayerDataService.get(player) or { level = 1 }).level
+		local nextLevel = math.huge
+		for _, route in World.routesFrom(stageId) do
+			nextLevel = math.min(nextLevel, math.max(World.Stages[route.from].unlockLevel, World.Stages[route.to].unlockLevel))
+		end
+		return nil, if nextLevel < math.huge and nextLevel > level
+			then `Routes from here unlock at level {nextLevel}`
+			else "No routes from this stage"
 	end
 	if crowdCounts[stageId] <= 0 then
 		return nil, "Nobody waiting. Give the crowd a few seconds"
@@ -386,10 +402,11 @@ local function submitTout(player: Player, roundId: unknown, presses: unknown)
 	if boarded > 0 then
 		setCrowd(round.stageId, crowdCounts[round.stageId] - boarded)
 		if trip.passengers == 0 then
-			local route = World.routeFrom(round.stageId)
+			local route = PassengerService.routeFor(player, round.stageId)
 			if route then
 				trip.routeId = route.id
 				trip.nextCheckpoint = 1
+				trip.visited = 0
 				trip.startedAt = os.clock()
 				record.flagged = false
 			end
@@ -405,6 +422,30 @@ end
 
 function PassengerService.getTrip(player: Player): Trip
 	return getTrip(player)
+end
+
+function PassengerService.chosenDestination(player: Player): string?
+	return chosenDestination[player]
+end
+
+-- The route passengers boarding at `stageId` will take: the driver's chosen destination if
+-- there is an unlocked route to it from here, otherwise the first unlocked route.
+function PassengerService.routeFor(player: Player, stageId: string): World.Route?
+	local profile = services.PlayerDataService.get(player)
+	local level = if profile then profile.level else 1
+	local chosen = chosenDestination[player]
+	if chosen then
+		local route = World.route(stageId, chosen)
+		if route and World.routeUnlocked(route, level) then
+			return route
+		end
+	end
+	for _, route in World.routesFrom(stageId) do
+		if World.routeUnlocked(route, level) then
+			return route
+		end
+	end
+	return nil
 end
 
 function PassengerService.init(registry: any)
@@ -432,6 +473,22 @@ function PassengerService.start()
 	end
 	Net.event("SubmitTout").OnServerEvent:Connect(submitTout)
 
+	local selectLimiter = Net.rateLimiter(4, 6)
+	Net.func("SelectRoute").OnServerInvoke = function(player: Player, destination: unknown)
+		if not selectLimiter:allow(player) then
+			return false, "Slow down"
+		end
+		if type(destination) ~= "string" or not World.Stages[destination] then
+			return false, "Unknown destination"
+		end
+		if getTrip(player).passengers > 0 then
+			return false, "Drop off your passengers first"
+		end
+		chosenDestination[player] = destination
+		services.StateService.push(player)
+		return true, `Route: to {World.Stages[destination].displayName}`
+	end
+
 	services.VehicleService.onDespawn(function(player: Player)
 		trips[player] = nil
 		rounds[player] = nil
@@ -440,6 +497,7 @@ function PassengerService.start()
 		trips[player] = nil
 		rounds[player] = nil
 		lastToutAt[player] = nil
+		chosenDestination[player] = nil
 	end)
 
 	task.spawn(crowdLoop)

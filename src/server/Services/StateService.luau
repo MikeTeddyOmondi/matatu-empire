@@ -27,9 +27,11 @@ local function build(player: Player): Types.ClientState?
 
 	local nextCheckpoint: Vector3? = nil
 	local destination: string? = nil
+	local destinationId: string? = nil
 	if trip.routeId and trip.passengers > 0 then
 		local route = World.Routes[trip.routeId]
 		destination = World.Stages[route.to].displayName
+		destinationId = route.to
 		nextCheckpoint = route.checkpoints[trip.nextCheckpoint] or World.Stages[route.to].position
 	end
 
@@ -54,6 +56,8 @@ local function build(player: Player): Types.ClientState?
 		seats = if record then record.tier.seats else 0,
 		routeId = trip.routeId,
 		destination = destination,
+		destinationId = destinationId,
+		chosenDestination = services.PassengerService.chosenDestination(player),
 		nextCheckpoint = nextCheckpoint,
 		atStage = atStage,
 		rushHour = services.WorldService.isRushHour(),

@@ -232,6 +232,8 @@ local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): V
 	local model = Instance.new("Model")
 	model.Name = `Matatu_{owner.UserId}`
 	model:SetAttribute("OwnerUserId", owner.UserId)
+	-- With streaming on, a matatu always arrives on clients whole (never half its parts).
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 
 	local W, L, H = tier.width, tier.length, tier.height
 	local root = spawnAt
@@ -675,7 +677,7 @@ local function onOccupantChanged(record: VehicleRecord)
 end
 
 local function stageNearestTo(position: Vector3): string
-	local best, bestDistance = "CBD", math.huge
+	local best, bestDistance = World.StageOrder[1], math.huge
 	for id, stage in World.Stages do
 		local d = (stage.position - position).Magnitude
 		if d < bestDistance then
@@ -863,24 +865,6 @@ local function groundY(position: Vector3, ignore: { Instance }): number
 	return if hit then hit.Position.Y else 0
 end
 
--- Closest point on the road centre line and the road's direction there (pointing the way the
--- matatu already faces).
-local function nearestRoadPoint(position: Vector3, facing: Vector3): (Vector3, Vector3)
-	local best, bestDir, bestDistance = World.RoadPath[1], Vector3.new(1, 0, 0), math.huge
-	for i = 1, #World.RoadPath - 1 do
-		local a, b = World.RoadPath[i], World.RoadPath[i + 1]
-		local ab = Vector3.new(b.X - a.X, 0, b.Z - a.Z)
-		local t = math.clamp(Vector3.new(position.X - a.X, 0, position.Z - a.Z):Dot(ab) / ab:Dot(ab), 0, 1)
-		local point = a + ab * t
-		local distance = (Vector3.new(position.X, 0, position.Z) - Vector3.new(point.X, 0, point.Z)).Magnitude
-		if distance < bestDistance then
-			best, bestDistance = point, distance
-			bestDir = if ab.Unit:Dot(facing) >= 0 then ab.Unit else -ab.Unit
-		end
-	end
-	return best, bestDir
-end
-
 -- Put a stuck matatu back on its wheels: level, slightly back from whatever it hit, or on the
 -- nearest bit of road if every nearby spot overlaps a building. Passengers stay aboard.
 local function unstick(record: VehicleRecord)
@@ -919,7 +903,7 @@ local function unstick(record: VehicleRecord)
 
 	local target = fits(here, facing) or fits(here - facing * 8, facing) or fits(here + facing * 8, facing)
 	if not target then
-		local point, direction = nearestRoadPoint(here, facing)
+		local point, direction = World.nearestRoadPoint(here, facing)
 		local y = groundY(point, ignore)
 		local at = Vector3.new(point.X, y + rideHeight + 0.6, point.Z)
 		target = CFrame.lookAt(at, at + direction)

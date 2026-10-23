@@ -23,6 +23,7 @@ local FUNCTIONS = {
 	"BuyUpgrade", -- (slotId) -> (ok, message)
 	"BuyVehicle", -- (tier) -> (ok, message)
 	"EquipVehicle", -- (tier) -> (ok, message)
+	"SelectRoute", -- (destinationStageId) -> (ok, message)
 }
 
 local Net = {}

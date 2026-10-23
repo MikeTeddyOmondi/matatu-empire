@@ -33,7 +33,9 @@ export type ClientState = {
 	passengersAboard: number,
 	seats: number,
 	routeId: string?,
-	destination: string?,
+	destination: string?, -- display name of the current trip's destination
+	destinationId: string?, -- stage id of the current trip's destination
+	chosenDestination: string?, -- stage id the driver picked for the next trip
 	nextCheckpoint: Vector3?, -- where to drive next; nil when no trip is running
 	atStage: string?,
 	rushHour: boolean,

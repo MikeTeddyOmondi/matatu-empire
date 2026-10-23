@@ -55,9 +55,10 @@ fmt:
 fmt-check:
     stylua --check src
 
-# Run the unit tests (driving model) with Lune
+# Run the unit tests (driving model, Nairobi map) with Lune
 test:
     lune run tests/DriveModel.spec.luau
+    lune run tests/World.spec.luau
 
 # Run every check: formatting, lint, types and tests
 ci: fmt-check lint check test
