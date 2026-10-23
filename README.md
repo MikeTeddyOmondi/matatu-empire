@@ -15,6 +15,20 @@ This is the **Phase 1–2 prototype** from the design doc: one route between two
 
 To test saving, publish the place, then turn on **Game Settings → Security → Enable Studio Access to API Services**. Without it, the game runs with in-memory profiles and warns in the output.
 
+## Adding the 3D matatu model
+
+`assets/matatu.glb` is a low-poly matatu (about 400 triangles) split into six parts: Body, Livery, Glass, Trim, Lights and TailLights. `assets/matatu-preview.png` shows what it looks like. Until you import it, the game uses the box matatu.
+
+1. In Studio, open **Avatar → Import 3D** (or File → Import 3D) and pick `assets/matatu.glb`.
+2. In the importer, keep the parts separate (don't merge meshes) and import.
+3. Rename the imported model to **Matatu**.
+4. In ReplicatedStorage, create a Folder named **Assets** and move the Matatu model into it.
+5. Press Play. Every matatu now uses the mesh, stretched to each tier's size. Paint, glass tint, lights and the other upgrades still apply.
+
+If the matatu faces backwards, select the Matatu model and add a Number attribute **Yaw** = `180`.
+
+To change the shape, edit `tools/make_matatu_mesh.py` and run `python3 tools/make_matatu_mesh.py assets` (only needs numpy). Or open the `.glb` in Blender and model over it. Keep the six part names so the game can find them.
+
 ## Developing with Rojo
 
 ```bash
@@ -30,12 +44,15 @@ For type checking in VS Code, install the **Luau Language Server** extension. Th
 
 | Action | Keyboard | Mobile |
 | --- | --- | --- |
-| Drive | WASD / arrows | Thumbstick |
+| Drive | W / Up | Thumbstick up (gamepad: right trigger) |
+| Brake, then reverse | S / Down (hold) | Thumbstick down (gamepad: left trigger) |
+| Steer | A D / Left Right | Thumbstick |
 | Start touting | T | Tout button |
 | Shout (during touting) | T or E | SHOUT button |
 | Garage | G | Garage button |
 | Horn | H | Horn button |
 | Get out | Space | Jump button |
+| Get back in | F (walk up to your matatu) | Tap the Drive prompt (gamepad: Y) |
 
 ## Project layout
 
@@ -74,7 +91,7 @@ The client never sends amounts. The server:
 
 ## Things to tune or add first
 
-- **Driving direction.** If matatus drive backwards, set `DRIVE_SIGN = 1` at the top of `VehicleService.luau`.
+- **Driving.** Input and motors run on the driver's client in `src/client/Controllers/Drive.luau` (reverse speed, brake strength, gauge). If matatus drive backwards, set `DRIVE_SIGN = 1` at the top of `VehicleService.luau`.
 - **Feel.** Torque and top speed are per tier in `Config/Vehicles.luau`. Steering lock is `MAX_STEER_DEGREES`.
 - **Audio.** Paste licensed sound asset ids into `HORN_SOUND_ID` and `MUSIC_SOUND_ID` in `VehicleService.luau`.
 - **Art.** Swap the generated box matatu for a Blender mesh. Keep the `Chassis`, `Body` and `DriverSeat` names, or update `buildMatatu`.

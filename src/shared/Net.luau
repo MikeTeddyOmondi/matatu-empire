@@ -13,6 +13,7 @@ local EVENTS = {
 	"ToutResult", -- server -> client: (boarded: number, hits: number)
 	"SubmitTout", -- client -> server: (roundId: number, pressTimes: {number})
 	"Horn", -- client -> server: ()
+	"EnterVehicle", -- client -> server: () get back into your own matatu
 }
 
 local FUNCTIONS = {

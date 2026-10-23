@@ -28,6 +28,9 @@ export type VehicleRecord = {
 	cosmetics: Folder,
 	label: TextLabel,
 	ledParts: { BasePart },
+	paintPart: BasePart, -- the part whose colour is the matatu's paint (mesh body or the box body)
+	glassPart: BasePart?,
+	usesMesh: boolean,
 	flagged: boolean, -- set when the anti-exploit check fails; cancels the current trip
 	overSpeedTime: number,
 	upsideDownTime: number,
@@ -39,10 +42,15 @@ local WHEEL_RADIUS = 2
 local WHEEL_WIDTH = 1.4
 local MAX_STEER_DEGREES = 32
 local SPEED_TOLERANCE = 1.5 -- allowed multiple of the theoretical top speed before flagging
+local ENTER_DISTANCE = 26 -- studs from the chassis within which you can hop back in
 
 -- Optional audio. Paste your own uploaded/licensed asset ids here ("rbxassetid://123").
 local HORN_SOUND_ID = ""
 local MUSIC_SOUND_ID = ""
+
+-- Optional imported model. Put a Model named "Matatu" in ReplicatedStorage.Assets containing
+-- MeshParts named Body, Livery, Glass, Trim, Lights and TailLights (tools/make_matatu_mesh.py
+-- generates exactly that). Set a number attribute "Yaw" = 180 on the Model if it faces backwards.
 
 local VehicleService = {}
 
@@ -168,6 +176,72 @@ local function buildLabel(body: BasePart, owner: Player): TextLabel
 	return label
 end
 
+local function findMeshTemplate(): (Model?, BasePart?)
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	local template = assets and assets:FindFirstChild("Matatu")
+	if not template or not template:IsA("Model") then
+		return nil, nil
+	end
+	local body = template:FindFirstChild("Body", true)
+	if not body or not body:IsA("BasePart") then
+		warn("[VehicleService] Assets.Matatu has no BasePart named Body; using the box matatu")
+		return nil, nil
+	end
+	return template, body
+end
+
+-- Clone the imported matatu and fit it to the box body: the template's Body part is stretched
+-- to the body's size and every other part keeps its position relative to Body, scaled the same way.
+local function attachMesh(model: Model, body: BasePart, tier: VehicleTier): (BasePart?, BasePart?)
+	local template, templateBody = findMeshTemplate()
+	if not template or not templateBody then
+		return nil, nil
+	end
+	local yaw = template:GetAttribute("Yaw")
+	local turn = CFrame.Angles(0, math.rad(if type(yaw) == "number" then yaw else 0), 0)
+	local factor = body.Size / templateBody.Size
+
+	local visuals = Instance.new("Model")
+	visuals.Name = "Visual"
+	visuals.Parent = model
+
+	local paintPart: BasePart? = nil
+	local glassPart: BasePart? = nil
+	for _, source in template:GetDescendants() do
+		if not source:IsA("BasePart") then
+			continue
+		end
+		local offset = templateBody.CFrame:ToObjectSpace(source.CFrame)
+		local part = source:Clone()
+		for _, child in part:GetChildren() do
+			if child:IsA("JointInstance") or child:IsA("WeldConstraint") then
+				child:Destroy()
+			end
+		end
+		part.Anchored = false
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+		part.Massless = true
+		part.Size = source.Size * factor
+		part.CFrame = body.CFrame * turn * CFrame.new(offset.Position * factor) * offset.Rotation
+		part.Parent = visuals
+		weld(body, part)
+
+		if source.Name == "Body" then
+			part.Color = tier.bodyColor
+			paintPart = part
+		elseif source.Name == "Glass" then
+			part.Material = Enum.Material.Glass
+			part.Reflectance = 0.2
+			glassPart = part
+		elseif source.Name == "Lights" or source.Name == "TailLights" then
+			part.Material = Enum.Material.Neon
+		end
+	end
+	return paintPart, glassPart
+end
+
 local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): VehicleRecord
 	local model = Instance.new("Model")
 	model.Name = `Matatu_{owner.UserId}`
@@ -198,33 +272,42 @@ local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): V
 	})
 	weld(chassis, body)
 
-	-- Window band and windscreen.
-	local windows = newPart({
-		Name = "Windows",
-		Size = Vector3.new(W + 0.1, bodyHeight * 0.32, L - 2),
-		CFrame = body.CFrame * CFrame.new(0, bodyHeight * 0.18, 0.4),
-		Color = Color3.fromRGB(20, 26, 34),
-		Material = Enum.Material.Glass,
-		Reflectance = 0.2,
-		Massless = true,
-		CanCollide = false,
-		Parent = model,
-	})
-	weld(body, windows)
-	local windscreen = newPart({
-		Name = "Windscreen",
-		Size = Vector3.new(W - 1, bodyHeight * 0.4, 0.2),
-		CFrame = body.CFrame * CFrame.new(0, bodyHeight * 0.15, -L / 2 - 0.05),
-		Color = Color3.fromRGB(20, 26, 34),
-		Material = Enum.Material.Glass,
-		Reflectance = 0.2,
-		Massless = true,
-		CanCollide = false,
-		Parent = model,
-	})
-	weld(body, windscreen)
+	local meshBody, meshGlass = attachMesh(model, body, tier)
+	local usesMesh = meshBody ~= nil
+	-- With a mesh, the box body stays as the invisible collision hull and cosmetics anchor.
+	body.Transparency = if usesMesh then 1 else 0
 
-	-- Headlights.
+	local boxGlass: BasePart? = nil
+	if not usesMesh then
+		-- Window band and windscreen.
+		local windows = newPart({
+			Name = "Windows",
+			Size = Vector3.new(W + 0.1, bodyHeight * 0.32, L - 2),
+			CFrame = body.CFrame * CFrame.new(0, bodyHeight * 0.18, 0.4),
+			Color = Color3.fromRGB(20, 26, 34),
+			Material = Enum.Material.Glass,
+			Reflectance = 0.2,
+			Massless = true,
+			CanCollide = false,
+			Parent = model,
+		})
+		weld(body, windows)
+		local windscreen = newPart({
+			Name = "Windscreen",
+			Size = Vector3.new(W - 1, bodyHeight * 0.4, 0.2),
+			CFrame = body.CFrame * CFrame.new(0, bodyHeight * 0.15, -L / 2 - 0.05),
+			Color = Color3.fromRGB(20, 26, 34),
+			Material = Enum.Material.Glass,
+			Reflectance = 0.2,
+			Massless = true,
+			CanCollide = false,
+			Parent = model,
+		})
+		weld(body, windscreen)
+		boxGlass = windows
+	end
+
+	-- Headlights (the lamps are hidden under a mesh, but their SpotLights still shine).
 	for _, side in { -1, 1 } do
 		local lamp = newPart({
 			Name = "Headlight",
@@ -232,6 +315,7 @@ local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): V
 			CFrame = body.CFrame * CFrame.new(side * (W / 2 - 1.2), -bodyHeight / 2 + 1, -L / 2 - 0.1),
 			Color = Color3.fromRGB(255, 250, 220),
 			Material = Enum.Material.Neon,
+			Transparency = if usesMesh then 1 else 0,
 			Massless = true,
 			CanCollide = false,
 			Parent = model,
@@ -281,6 +365,13 @@ local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): V
 
 	local label = buildLabel(body, owner)
 
+	-- Tuning the client drive controller reads.
+	model:SetAttribute("MaxSpeed", tier.maxSpeed)
+	model:SetAttribute("Torque", tier.torque)
+	model:SetAttribute("DriveSign", DRIVE_SIGN)
+	model:SetAttribute("MaxSteer", MAX_STEER_DEGREES)
+	model:SetAttribute("WheelRadius", WHEEL_RADIUS)
+
 	model.Parent = vehiclesFolder
 
 	return {
@@ -295,6 +386,9 @@ local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): V
 		cosmetics = cosmetics,
 		label = label,
 		ledParts = {},
+		paintPart = meshBody or body,
+		glassPart = meshGlass or boxGlass,
+		usesMesh = usesMesh,
 		flagged = false,
 		overSpeedTime = 0,
 		upsideDownTime = 0,
@@ -336,7 +430,7 @@ local function applyCosmetics(record: VehicleRecord, upgrades: { [string]: numbe
 
 	-- Paint & graffiti
 	local paint = upgrades.Paint or 0
-	body.Color = record.tier.bodyColor
+	record.paintPart.Color = record.tier.bodyColor
 	if paint >= 1 then
 		for _, side in { -1, 1 } do
 			deco(record, {
@@ -362,7 +456,7 @@ local function applyCosmetics(record: VehicleRecord, upgrades: { [string]: numbe
 		end
 	end
 	if paint >= 3 then
-		body.Color = Color3.fromRGB(20, 20, 26)
+		record.paintPart.Color = Color3.fromRGB(20, 20, 26)
 		deco(record, {
 			Name = "RoofArt",
 			Size = Vector3.new(W - 0.6, 0.1, L - 1),
@@ -448,7 +542,7 @@ local function applyCosmetics(record: VehicleRecord, upgrades: { [string]: numbe
 
 	-- Interior (seen through the windows as tint, trim and a rear screen)
 	local interior = upgrades.Interior or 0
-	local windows = record.model:FindFirstChild("Windows") :: BasePart?
+	local windows = record.glassPart
 	if windows then
 		windows.Color = if interior >= 1 then Color3.fromRGB(40, 20, 60) else Color3.fromRGB(20, 26, 34)
 	end
@@ -671,21 +765,19 @@ local function step(dt: number)
 		local seat = record.seat
 		local tier = record.tier
 		local driving = seat.Occupant ~= nil
-		local throttle = if driving then seat.ThrottleFloat else 0
-		local steer = if driving then seat.SteerFloat else 0
-
 		local speed = record.chassis.AssemblyLinearVelocity.Magnitude
 		local topSpeed = tier.maxSpeed * WHEEL_RADIUS
 
-		for _, motor in record.rearMotors do
-			motor.AngularVelocity = DRIVE_SIGN * throttle * tier.maxSpeed
-			-- With no throttle the motor holds the wheels still, acting as a brake.
-			motor.MotorMaxTorque = if throttle ~= 0 then tier.torque else tier.torque * 0.35
-		end
-		-- Less steering lock at speed so the matatu doesn't flip.
-		local steerScale = 1 - 0.55 * math.clamp(speed / topSpeed, 0, 1)
-		for _, servo in record.steerServos do
-			servo.TargetAngle = -steer * MAX_STEER_DEGREES * steerScale
+		-- While someone drives, the driver's client owns the physics and runs the motors
+		-- (Controllers/Drive.luau). Parked matatus get the handbrake from here.
+		if not driving then
+			for _, motor in record.rearMotors do
+				motor.AngularVelocity = 0
+				motor.MotorMaxTorque = tier.torque * 0.6
+			end
+			for _, servo in record.steerServos do
+				servo.TargetAngle = 0
+			end
 		end
 
 		-- Anti-exploit: impossible speed cancels the trip.
@@ -752,6 +844,27 @@ function VehicleService.start()
 		if horn and horn:IsA("Sound") then
 			horn:Play()
 		end
+	end)
+
+	-- Get back into your own matatu (after hopping out with Space, for example).
+	local enterLimiter = Net.rateLimiter(1, 2)
+	Net.event("EnterVehicle").OnServerEvent:Connect(function(player: Player)
+		if not enterLimiter:allow(player) then
+			return
+		end
+		local record = records[player]
+		local humanoid = playerCharacterHumanoid(player)
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if not record or not humanoid or humanoid.Health <= 0 or not root or not root:IsA("BasePart") then
+			return
+		end
+		if record.seat.Occupant or humanoid.SeatPart then
+			return
+		end
+		if (root.Position - record.chassis.Position).Magnitude > ENTER_DISTANCE then
+			return
+		end
+		record.seat:Sit(humanoid)
 	end)
 
 	Players.PlayerRemoving:Connect(function(player)
