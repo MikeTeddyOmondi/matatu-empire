@@ -213,18 +213,212 @@ local function buildStages()
 	spawn.Parent = mapFolder
 end
 
+local WALL_COLORS = {
+	Color3.fromRGB(214, 196, 170),
+	Color3.fromRGB(190, 120, 90),
+	Color3.fromRGB(150, 175, 200),
+	Color3.fromRGB(232, 228, 214),
+	Color3.fromRGB(176, 196, 128),
+	Color3.fromRGB(226, 170, 110),
+}
+local AWNING_COLORS = {
+	Color3.fromRGB(200, 40, 40),
+	Color3.fromRGB(30, 110, 200),
+	Color3.fromRGB(240, 180, 30),
+	Color3.fromRGB(30, 150, 80),
+}
+local SHOP_NAMES = { "DUKA", "HOTEL", "SALON", "CHEMIST", "HARDWARE", "BUTCHERY", "CAFE", "MITUMBA", "SHOP" }
+local GLASS_DAY = Color3.fromRGB(56, 74, 92)
+local GLASS_NIGHT = Color3.fromRGB(255, 212, 140)
+local FLOOR_HEIGHT = 4.5
+local COLUMN_SPACING = 5
+
+local windowParts: { BasePart } = {}
+local windowsLit = false
+
+-- One face of a building: glass bands per floor with wall-coloured pillars over them.
+-- `axis` is the building-local axis the face points along, `sign` which way.
+local function buildFace(
+	model: Model,
+	frame: CFrame,
+	size: Vector3,
+	axis: "X" | "Z",
+	sign: number,
+	isFront: boolean,
+	wallColor: Color3
+)
+	local half = if axis == "X" then size.X / 2 else size.Z / 2
+	local span = (if axis == "X" then size.Z else size.X) - 1.6
+	local function at(u: number, y: number, out: number): CFrame
+		local localY = y - size.Y / 2
+		if axis == "X" then
+			return frame * CFrame.new(sign * (half + out), localY, u)
+		end
+		return frame * CFrame.new(u, localY, sign * (half + out))
+	end
+	local function sized(along: number, height: number, thickness: number): Vector3
+		if axis == "X" then
+			return Vector3.new(thickness, height, along)
+		end
+		return Vector3.new(along, height, thickness)
+	end
+
+	local firstFloor = if isFront then 8.1 else 3.6
+	local lastFloor = firstFloor
+	for y = firstFloor, size.Y - 2.6, FLOOR_HEIGHT do
+		lastFloor = y
+		local glass = part({
+			Name = "Windows",
+			Size = sized(span, 2.3, 0.1),
+			CFrame = at(0, y, 0.05),
+			Color = GLASS_DAY,
+			Material = Enum.Material.Glass,
+			Reflectance = 0.15,
+			CastShadow = false,
+			Parent = model,
+		})
+		table.insert(windowParts, glass)
+	end
+	if lastFloor < firstFloor or size.Y < firstFloor + 2 then
+		return
+	end
+
+	-- Pillars split each band into separate windows.
+	local columns = math.max(1, math.floor(span / COLUMN_SPACING))
+	local pillarBottom, pillarTop = firstFloor - 1.3, lastFloor + 1.3
+	for i = 1, columns - 1 do
+		local u = -span / 2 + i * span / columns
+		part({
+			Name = "Pillar",
+			Size = sized(0.8, pillarTop - pillarBottom, 0.16),
+			CFrame = at(u, (pillarBottom + pillarTop) / 2, 0.08),
+			Color = wallColor,
+			Material = Enum.Material.Concrete,
+			CastShadow = false,
+			Parent = model,
+		})
+	end
+end
+
+local function buildShopfront(model: Model, frame: CFrame, size: Vector3, sign: number, rng: Random)
+	local half = size.X / 2
+	local function at(u: number, y: number, out: number): CFrame
+		return frame * CFrame.new(sign * (half + out), y - size.Y / 2, u)
+	end
+	local width = math.min(size.Z - 8, 12)
+	-- Shop window and door.
+	part({
+		Name = "ShopWindow",
+		Size = Vector3.new(0.1, 3.4, width),
+		CFrame = at(0, 2.6, 0.05),
+		Color = Color3.fromRGB(40, 52, 64),
+		Material = Enum.Material.Glass,
+		Reflectance = 0.2,
+		Parent = model,
+	})
+	part({
+		Name = "Door",
+		Size = Vector3.new(0.14, 4.2, 2.6),
+		CFrame = at(width / 2 + 2, 2.1, 0.07),
+		Color = Color3.fromRGB(70, 50, 36),
+		Material = Enum.Material.Wood,
+		Parent = model,
+	})
+	-- Awning sticking out over the pavement.
+	local awningColor = AWNING_COLORS[rng:NextInteger(1, #AWNING_COLORS)]
+	part({
+		Name = "Awning",
+		Size = Vector3.new(2.4, 0.3, width + 2),
+		CFrame = at(0, 4.9, 1.2) * CFrame.Angles(0, 0, sign * math.rad(-12)),
+		Color = awningColor,
+		Material = Enum.Material.Fabric,
+		Parent = model,
+	})
+	-- Painted sign board above the awning.
+	local sign_ = part({
+		Name = "Sign",
+		Size = Vector3.new(0.2, 1.6, width),
+		CFrame = at(0, 6.1, 0.1),
+		Color = Color3.fromRGB(245, 240, 225),
+		Material = Enum.Material.SmoothPlastic,
+		Parent = model,
+	})
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = if sign > 0 then Enum.NormalId.Right else Enum.NormalId.Left
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 24
+	gui.MaxDistance = 200
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.fromScale(1, 1)
+	text.BackgroundTransparency = 1
+	text.Font = Enum.Font.GothamBlack
+	text.TextScaled = true
+	text.TextColor3 = awningColor
+	text.Text = SHOP_NAMES[rng:NextInteger(1, #SHOP_NAMES)]
+	text.Parent = gui
+	gui.Parent = sign_
+end
+
+local function buildBuilding(parent: Folder, cframe: CFrame, size: Vector3, roadSign: number, rng: Random)
+	local model = Instance.new("Model")
+	model.Name = "Building"
+	model.Parent = parent
+	local wallColor = WALL_COLORS[rng:NextInteger(1, #WALL_COLORS)]
+
+	part({
+		Name = "Walls",
+		Size = size,
+		CFrame = cframe,
+		Color = wallColor,
+		Material = Enum.Material.Concrete,
+		Parent = model,
+	})
+	-- Roof parapet trim.
+	part({
+		Name = "Parapet",
+		Size = Vector3.new(size.X + 0.6, 0.8, size.Z + 0.6),
+		CFrame = cframe * CFrame.new(0, size.Y / 2 + 0.1, 0),
+		Color = wallColor:Lerp(Color3.new(0, 0, 0), 0.25),
+		Material = Enum.Material.Concrete,
+		Parent = model,
+	})
+
+	-- The face toward the road gets a shopfront on the ground floor.
+	buildFace(model, cframe, size, "X", roadSign, true, wallColor)
+	buildFace(model, cframe, size, "X", -roadSign, false, wallColor)
+	buildFace(model, cframe, size, "Z", 1, false, wallColor)
+	buildFace(model, cframe, size, "Z", -1, false, wallColor)
+	buildShopfront(model, cframe, size, roadSign, rng)
+
+	-- Rooftop water tank on about half the roofs.
+	if rng:NextNumber() < 0.55 then
+		local tankPos = cframe
+			* CFrame.new(rng:NextNumber(-size.X / 4, size.X / 4), size.Y / 2 + 2.2, rng:NextNumber(-size.Z / 4, size.Z / 4))
+		part({
+			Name = "WaterTank",
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(3.4, 3.2, 3.2),
+			CFrame = tankPos * CFrame.Angles(0, 0, math.pi / 2),
+			Color = if rng:NextNumber() < 0.5 then Color3.fromRGB(30, 30, 34) else Color3.fromRGB(40, 90, 170),
+			Material = Enum.Material.Plastic,
+			Parent = model,
+		})
+		part({
+			Name = "TankStand",
+			Size = Vector3.new(3, 0.4, 3),
+			CFrame = tankPos * CFrame.new(0, -1.9, 0),
+			Color = Color3.fromRGB(90, 90, 96),
+			Material = Enum.Material.Metal,
+			Parent = model,
+		})
+	end
+end
+
 local function buildFillerBuildings()
 	local buildings = Instance.new("Folder")
 	buildings.Name = "Buildings"
 	buildings.Parent = mapFolder
 	local rng = Random.new(254)
-	local palette = {
-		Color3.fromRGB(214, 196, 170),
-		Color3.fromRGB(190, 120, 90),
-		Color3.fromRGB(120, 150, 180),
-		Color3.fromRGB(230, 230, 220),
-		Color3.fromRGB(170, 190, 120),
-	}
 	for i = 1, #World.RoadPath - 1 do
 		local a, b = World.RoadPath[i], World.RoadPath[i + 1]
 		local frame = CFrame.lookAt(a, b)
@@ -233,21 +427,38 @@ local function buildFillerBuildings()
 			for _, side in { -1, 1 } do
 				local width = rng:NextNumber(18, 28)
 				local depth = rng:NextNumber(18, 28)
-				local height = rng:NextNumber(14, 60)
+				-- Whole floors plus a little roof margin, so windows line up.
+				local floors = rng:NextInteger(2, 12)
+				local height = 3.6 + floors * FLOOR_HEIGHT
 				local offset = World.RoadWidth / 2 + 10 + depth / 2
 				local position = (frame * CFrame.new(side * offset, height / 2, -along)).Position
 				local clearance = World.RoadWidth / 2 + math.max(width, depth) / 2 + 6
 				if not nearRoad(position, clearance) and not nearStage(position, 70) then
-					part({
-						Name = "Building",
-						Size = Vector3.new(width, height, depth),
-						CFrame = CFrame.new(position) * frame.Rotation,
-						Color = palette[rng:NextInteger(1, #palette)],
-						Material = Enum.Material.Concrete,
-						Parent = buildings,
-					})
+					-- Building-local X points away from the road on this side, so the road is at -side.
+					local cframe = CFrame.new(position) * frame.Rotation
+					buildBuilding(buildings, cframe, Vector3.new(depth, height, width), -side, rng)
 				end
 			end
+		end
+	end
+end
+
+-- Windows glow after dusk; about 60% of them, like real offices and flats.
+local function setWindowsLit(lit: boolean)
+	if lit == windowsLit then
+		return
+	end
+	windowsLit = lit
+	local rng = Random.new(91)
+	for _, window in windowParts do
+		if lit and rng:NextNumber() < 0.6 then
+			window.Material = Enum.Material.Neon
+			window.Color = GLASS_NIGHT
+			window.Reflectance = 0
+		else
+			window.Material = Enum.Material.Glass
+			window.Color = GLASS_DAY
+			window.Reflectance = 0.15
 		end
 	end
 end
@@ -257,6 +468,8 @@ local function startDayCycle()
 	local hoursPerSecond = 24 / Economy.DayLengthSeconds
 	RunService.Heartbeat:Connect(function(dt: number)
 		Lighting.ClockTime = (Lighting.ClockTime + dt * hoursPerSecond) % 24
+		local clock = Lighting.ClockTime
+		setWindowsLit(clock >= 18.4 or clock < 6.2)
 	end)
 end
 
