@@ -166,7 +166,7 @@ local function buildStages()
 		local roof = part({
 			Name = "Roof",
 			Size = Vector3.new(30, 1, 14),
-			Position = shelterPos + Vector3.new(0, 11, 0),
+			Position = shelterPos + Vector3.new(0, 12.5, 0), -- clears the tallest matatu (10.4 studs)
 			Color = stage.color,
 			Material = Enum.Material.Metal,
 			Parent = model,
@@ -178,9 +178,9 @@ local function buildStages()
 			for _, dz in { -1, 1 } do
 				part({
 					Name = "Pole",
-					Size = Vector3.new(0.8, 10.5, 0.8),
+					Size = Vector3.new(0.8, 12, 0.8),
 					Position = shelterPos
-						+ Vector3.new(dx * (roof.Size.X / 2 - 1), 5.5, dz * (roof.Size.Z / 2 - 1)),
+						+ Vector3.new(dx * (roof.Size.X / 2 - 1), 6.25, dz * (roof.Size.Z / 2 - 1)),
 					Color = Color3.fromRGB(60, 60, 64),
 					Material = Enum.Material.Metal,
 					Parent = model,
@@ -269,6 +269,8 @@ local function buildFace(
 		lastFloor = y
 		local glass = part({
 			Name = "Windows",
+			CanCollide = false, -- decoration: nothing to snag a matatu on
+			CanQuery = false,
 			Size = sized(span, 2.3, 0.1),
 			CFrame = at(0, y, 0.05),
 			Color = GLASS_DAY,
@@ -290,6 +292,8 @@ local function buildFace(
 		local u = -span / 2 + i * span / columns
 		part({
 			Name = "Pillar",
+			CanCollide = false, -- decoration: nothing to snag a matatu on
+			CanQuery = false,
 			Size = sized(0.8, pillarTop - pillarBottom, 0.16),
 			CFrame = at(u, (pillarBottom + pillarTop) / 2, 0.08),
 			Color = wallColor,
@@ -309,6 +313,8 @@ local function buildShopfront(model: Model, frame: CFrame, size: Vector3, sign: 
 	-- Shop window and door.
 	part({
 		Name = "ShopWindow",
+		CanCollide = false, -- decoration: nothing to snag a matatu on
+		CanQuery = false,
 		Size = Vector3.new(0.1, 3.4, width),
 		CFrame = at(0, 2.6, 0.05),
 		Color = Color3.fromRGB(40, 52, 64),
@@ -318,6 +324,8 @@ local function buildShopfront(model: Model, frame: CFrame, size: Vector3, sign: 
 	})
 	part({
 		Name = "Door",
+		CanCollide = false, -- decoration: nothing to snag a matatu on
+		CanQuery = false,
 		Size = Vector3.new(0.14, 4.2, 2.6),
 		CFrame = at(width / 2 + 2, 2.1, 0.07),
 		Color = Color3.fromRGB(70, 50, 36),
@@ -328,6 +336,8 @@ local function buildShopfront(model: Model, frame: CFrame, size: Vector3, sign: 
 	local awningColor = AWNING_COLORS[rng:NextInteger(1, #AWNING_COLORS)]
 	part({
 		Name = "Awning",
+		CanCollide = false, -- decoration: nothing to snag a matatu on
+		CanQuery = false,
 		Size = Vector3.new(2.4, 0.3, width + 2),
 		CFrame = at(0, 4.9, 1.2) * CFrame.Angles(0, 0, sign * math.rad(-12)),
 		Color = awningColor,
@@ -337,6 +347,8 @@ local function buildShopfront(model: Model, frame: CFrame, size: Vector3, sign: 
 	-- Painted sign board above the awning.
 	local sign_ = part({
 		Name = "Sign",
+		CanCollide = false, -- decoration: nothing to snag a matatu on
+		CanQuery = false,
 		Size = Vector3.new(0.2, 1.6, width),
 		CFrame = at(0, 6.1, 0.1),
 		Color = Color3.fromRGB(245, 240, 225),
@@ -376,6 +388,8 @@ local function buildBuilding(parent: Folder, cframe: CFrame, size: Vector3, road
 	-- Roof parapet trim.
 	part({
 		Name = "Parapet",
+		CanCollide = false, -- decoration: nothing to snag a matatu on
+		CanQuery = false,
 		Size = Vector3.new(size.X + 0.6, 0.8, size.Z + 0.6),
 		CFrame = cframe * CFrame.new(0, size.Y / 2 + 0.1, 0),
 		Color = wallColor:Lerp(Color3.new(0, 0, 0), 0.25),
@@ -396,6 +410,8 @@ local function buildBuilding(parent: Folder, cframe: CFrame, size: Vector3, road
 			* CFrame.new(rng:NextNumber(-size.X / 4, size.X / 4), size.Y / 2 + 2.2, rng:NextNumber(-size.Z / 4, size.Z / 4))
 		part({
 			Name = "WaterTank",
+			CanCollide = false, -- decoration: nothing to snag a matatu on
+			CanQuery = false,
 			Shape = Enum.PartType.Cylinder,
 			Size = Vector3.new(3.4, 3.2, 3.2),
 			CFrame = tankPos * CFrame.Angles(0, 0, math.pi / 2),
@@ -405,6 +421,8 @@ local function buildBuilding(parent: Folder, cframe: CFrame, size: Vector3, road
 		})
 		part({
 			Name = "TankStand",
+			CanCollide = false, -- decoration: nothing to snag a matatu on
+			CanQuery = false,
 			Size = Vector3.new(3, 0.4, 3),
 			CFrame = tankPos * CFrame.new(0, -1.9, 0),
 			Color = Color3.fromRGB(90, 90, 96),
