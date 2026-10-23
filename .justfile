@@ -13,7 +13,7 @@ roblox_types_url := "https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/ma
 default:
     @just --list --unsorted
 
-# Install the toolchain from rokit.toml (rojo, selene, stylua, luau-lsp, just)
+# Install the toolchain from rokit.toml (rojo, selene, stylua, luau-lsp, lune, just)
 install:
     rokit install
 
@@ -55,8 +55,12 @@ fmt:
 fmt-check:
     stylua --check src
 
-# Run every check: formatting, lint and types
-ci: fmt-check lint check
+# Run the unit tests (driving model) with Lune
+test:
+    lune run tests/DriveModel.spec.luau
+
+# Run every check: formatting, lint, types and tests
+ci: fmt-check lint check test
 
 # Regenerate the matatu mesh in assets/ (needs python3 with numpy)
 mesh:

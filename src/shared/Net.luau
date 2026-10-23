@@ -14,6 +14,7 @@ local EVENTS = {
 	"SubmitTout", -- client -> server: (roundId: number, pressTimes: {number})
 	"Horn", -- client -> server: ()
 	"EnterVehicle", -- client -> server: () get back into your own matatu
+	"Unstick", -- client -> server: () reset a stuck matatu onto its wheels
 }
 
 local FUNCTIONS = {

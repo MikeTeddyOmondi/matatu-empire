@@ -1,5 +1,9 @@
 --!strict
 -- Matatu tiers available in the MVP (tiers 4 and 5 come in a later update).
+--
+-- Handling is arcade-style (see Controllers/Drive.luau): the numbers below are what the driver
+-- feels directly, not motor settings. Speeds are in studs per second (1 stud is about 28 cm, so
+-- 64 studs/s is roughly 65 km/h).
 
 export type VehicleTier = {
 	tier: number,
@@ -10,8 +14,12 @@ export type VehicleTier = {
 	length: number, -- studs
 	width: number,
 	height: number,
-	maxSpeed: number, -- wheel angular speed, rad/s
-	torque: number,
+	topSpeed: number, -- studs/s going forward
+	reverseSpeed: number, -- studs/s going backward
+	acceleration: number, -- studs/s^2 under full throttle
+	brakeDeceleration: number, -- studs/s^2 when pressing the opposite pedal
+	turnRate: number, -- max yaw in rad/s
+	turnRadius: number, -- tightest turning circle radius in studs (limits yaw at low speed)
 	bodyColor: Color3,
 }
 
@@ -25,8 +33,12 @@ local Vehicles: { VehicleTier } = {
 		length = 18,
 		width = 8,
 		height = 7,
-		maxSpeed = 32,
-		torque = 9000,
+		topSpeed = 64,
+		reverseSpeed = 24,
+		acceleration = 18,
+		brakeDeceleration = 60,
+		turnRate = 1.7,
+		turnRadius = 13,
 		bodyColor = Color3.fromRGB(235, 235, 225),
 	},
 	{
@@ -38,8 +50,12 @@ local Vehicles: { VehicleTier } = {
 		length = 18,
 		width = 8,
 		height = 7,
-		maxSpeed = 40,
-		torque = 12000,
+		topSpeed = 80,
+		reverseSpeed = 28,
+		acceleration = 24,
+		brakeDeceleration = 70,
+		turnRate = 1.8,
+		turnRadius = 13,
 		bodyColor = Color3.fromRGB(245, 245, 245),
 	},
 	{
@@ -51,8 +67,12 @@ local Vehicles: { VehicleTier } = {
 		length = 24,
 		width = 9,
 		height = 8,
-		maxSpeed = 42,
-		torque = 18000,
+		topSpeed = 84,
+		reverseSpeed = 26,
+		acceleration = 20,
+		brakeDeceleration = 60,
+		turnRate = 1.5,
+		turnRadius = 17,
 		bodyColor = Color3.fromRGB(250, 250, 250),
 	},
 }

@@ -1,9 +1,12 @@
 --!strict
--- Builds drivable matatus from parts and constraints, drives them from the VehicleSeat on the
--- server, applies Vibe cosmetics, and watches for impossible speeds.
+-- Builds drivable matatus, applies Vibe cosmetics, parks unattended matatus, and watches for
+-- impossible speeds.
 --
--- Chassis layout: forward is the chassis's -Z (its LookVector). Rear wheels are motor hinges,
--- front wheels hang off servo-steered knuckles.
+-- Handling is arcade-style, the approach most Roblox driving games use: the matatu rests on four
+-- invisible frictionless skids, a LinearVelocity sets its speed along its heading (and kills
+-- sideways sliding), and an AngularVelocity sets its yaw while keeping it level. The driver's
+-- client owns the physics and sets both each frame (Controllers/Drive.luau). The visible wheels
+-- are cosmetic and are spun and steered on every client. Forward is the chassis's -Z.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -23,8 +26,10 @@ export type VehicleRecord = {
 	chassis: BasePart,
 	body: BasePart,
 	seat: VehicleSeat,
-	rearMotors: { HingeConstraint },
-	steerServos: { HingeConstraint },
+	drive: LinearVelocity,
+	turn: AngularVelocity,
+	parked: boolean, -- whether the parking brake values are currently applied
+	lastUnstick: number,
 	cosmetics: Folder,
 	label: TextLabel,
 	ledParts: { BasePart },
@@ -36,12 +41,14 @@ export type VehicleRecord = {
 	upsideDownTime: number,
 }
 
--- Flip to 1 if your matatus drive backwards (depends on hinge axis conventions).
-local DRIVE_SIGN = -1
 local WHEEL_RADIUS = 2
 local WHEEL_WIDTH = 1.4
-local MAX_STEER_DEGREES = 32
-local SPEED_TOLERANCE = 1.5 -- allowed multiple of the theoretical top speed before flagging
+local WHEEL_Y = -0.4 -- wheel centre relative to the chassis centre
+local SKID_RADIUS = 1.25 -- invisible frictionless balls the matatu actually rests on
+local PARK_FORCE = 120 -- parking brake strength, as acceleration (studs/s^2) times mass
+local LEVEL_TORQUE = 6000 -- keeps the matatu level and sets yaw, as torque per unit of mass
+local SPEED_TOLERANCE = 1.5 -- allowed multiple of the tier's top speed before flagging
+local UNSTICK_COOLDOWN = 5 -- seconds between unstick requests
 local ENTER_DISTANCE = 26 -- studs from the chassis within which you can hop back in
 
 -- Optional audio. Paste your own uploaded/licensed asset ids here ("rbxassetid://123").
@@ -88,70 +95,49 @@ local function attachment(parent: BasePart, cframe: CFrame, name: string?): Atta
 	return a
 end
 
-local UP_AXIS = CFrame.Angles(0, 0, math.pi / 2) -- rotates an attachment's primary axis (X) to point up
+local FRICTIONLESS = PhysicalProperties.new(1, 0, 0, 100, 100)
 
-local function buildWheel(
-	model: Model,
-	chassis: BasePart,
-	root: CFrame,
-	localPos: Vector3,
-	isFront: boolean,
-	tier: VehicleTier
-): (BasePart, HingeConstraint?, HingeConstraint?)
+-- A cosmetic wheel. It has no collision; a Weld holds it so clients can spin and steer it by
+-- changing the weld's C0 (see Controllers/Drive.luau).
+local function buildWheel(model: Model, chassis: BasePart, localPos: Vector3, isFront: boolean)
 	local wheel = newPart({
-		Name = isFront and "FrontWheel" or "RearWheel",
+		Name = if isFront then "FrontWheel" else "RearWheel",
 		Shape = Enum.PartType.Cylinder,
 		Size = Vector3.new(WHEEL_WIDTH, WHEEL_RADIUS * 2, WHEEL_RADIUS * 2),
-		CFrame = root * CFrame.new(localPos),
+		CFrame = chassis.CFrame * CFrame.new(localPos),
 		Color = Color3.fromRGB(28, 28, 30),
 		Material = Enum.Material.SmoothPlastic,
-		CustomPhysicalProperties = PhysicalProperties.new(0.9, 1.4, 0.1, 100, 1),
+		Massless = true,
+		CanCollide = false,
+		CanQuery = false,
+		CanTouch = false,
 		Parent = model,
 	})
-	local wheelAttachment = attachment(wheel, CFrame.new(), "Axle")
+	wheel:SetAttribute("Base", localPos)
+	wheel:SetAttribute("Front", isFront)
+	local mount = Instance.new("Weld")
+	mount.Name = "Mount"
+	mount.Part0 = chassis
+	mount.Part1 = wheel
+	mount.C0 = CFrame.new(localPos)
+	mount.Parent = wheel
+end
 
-	if isFront then
-		-- Knuckle: steers around Y, the wheel spins freely around the knuckle's X.
-		local knuckle = newPart({
-			Name = "Knuckle",
-			Size = Vector3.new(0.5, 0.5, 0.5),
-			CFrame = root * CFrame.new(localPos),
-			Transparency = 1,
-			CanCollide = false,
-			CanQuery = false,
-			Parent = model,
-		})
-		local steerA0 = attachment(chassis, CFrame.new(localPos) * UP_AXIS, "SteerBase")
-		local steerA1 = attachment(knuckle, UP_AXIS, "SteerKnuckle")
-		local servo = Instance.new("HingeConstraint")
-		servo.Name = "Steer"
-		servo.Attachment0 = steerA0
-		servo.Attachment1 = steerA1
-		servo.ActuatorType = Enum.ActuatorType.Servo
-		servo.ServoMaxTorque = 1e7
-		servo.AngularSpeed = 5
-		servo.LimitsEnabled = true
-		servo.LowerAngle = -MAX_STEER_DEGREES
-		servo.UpperAngle = MAX_STEER_DEGREES
-		servo.Parent = chassis
-
-		local axle = Instance.new("HingeConstraint")
-		axle.Name = "FreeAxle"
-		axle.Attachment0 = attachment(knuckle, CFrame.new(), "Axle")
-		axle.Attachment1 = wheelAttachment
-		axle.Parent = knuckle
-		return wheel, nil, servo
-	else
-		local motor = Instance.new("HingeConstraint")
-		motor.Name = "Drive"
-		motor.Attachment0 = attachment(chassis, CFrame.new(localPos), "RearAxle")
-		motor.Attachment1 = wheelAttachment
-		motor.ActuatorType = Enum.ActuatorType.Motor
-		motor.MotorMaxTorque = tier.torque
-		motor.AngularVelocity = 0
-		motor.Parent = chassis
-		return wheel, motor, nil
-	end
+-- An invisible frictionless ball under each wheel. These are what touch the ground, so the
+-- matatu glides wherever the LinearVelocity sends it and never snags or scrubs in corners.
+local function buildSkid(model: Model, chassis: BasePart, localPos: Vector3)
+	local skid = newPart({
+		Name = "Skid",
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * SKID_RADIUS * 2,
+		CFrame = chassis.CFrame * CFrame.new(localPos),
+		Transparency = 1,
+		CustomPhysicalProperties = FRICTIONLESS,
+		CanQuery = false,
+		CanTouch = false,
+		Parent = model,
+	})
+	weld(chassis, skid)
 end
 
 local function buildLabel(body: BasePart, owner: Player): TextLabel
@@ -255,7 +241,8 @@ local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): V
 		Size = Vector3.new(W, 1.2, L),
 		CFrame = root,
 		Color = Color3.fromRGB(40, 40, 44),
-		CustomPhysicalProperties = PhysicalProperties.new(3, 0.3, 0.2),
+		-- Low friction so scraping along a wall or kerb slides instead of sticking.
+		CustomPhysicalProperties = PhysicalProperties.new(3, 0.05, 0, 100, 100),
 		Parent = model,
 	})
 	model.PrimaryPart = chassis
@@ -268,6 +255,7 @@ local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): V
 		Color = tier.bodyColor,
 		Material = Enum.Material.SmoothPlastic,
 		Massless = true,
+		CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.05, 0, 100, 100),
 		Parent = model,
 	})
 	weld(chassis, body)
@@ -341,23 +329,39 @@ local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): V
 	seat.Parent = model
 	weld(chassis, seat)
 
-	local rearMotors: { HingeConstraint } = {}
-	local steerServos: { HingeConstraint } = {}
 	local axleX = W / 2 + WHEEL_WIDTH / 2 + 0.2
 	local axleZ = L / 2 - 3
+	local skidX = W / 2 - SKID_RADIUS
+	local skidY = WHEEL_Y - WHEEL_RADIUS + SKID_RADIUS -- skid bottoms line up with the wheel bottoms
 	for _, z in { -axleZ, axleZ } do
-		local isFront = z < 0
 		for _, side in { -1, 1 } do
-			local _, motor, servo =
-				buildWheel(model, chassis, root, Vector3.new(side * axleX, -0.4, z), isFront, tier)
-			if motor then
-				table.insert(rearMotors, motor)
-			end
-			if servo then
-				table.insert(steerServos, servo)
-			end
+			buildWheel(model, chassis, Vector3.new(side * axleX, WHEEL_Y, z), z < 0)
+			buildSkid(model, chassis, Vector3.new(side * skidX, skidY, z))
 		end
 	end
+
+	-- Movers. Plane mode leaves the chassis's up axis free, so gravity and kerbs still work.
+	local rootAttachment = attachment(chassis, CFrame.new(), "Root")
+	local drive = Instance.new("LinearVelocity")
+	drive.Name = "Drive"
+	drive.Attachment0 = rootAttachment
+	drive.RelativeTo = Enum.ActuatorRelativeTo.Attachment0
+	drive.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+	drive.PrimaryTangentAxis = Vector3.xAxis -- sideways (kept at 0: no sliding)
+	drive.SecondaryTangentAxis = -Vector3.zAxis -- forward
+	drive.PlaneVelocity = Vector2.zero
+	drive.MaxForce = 0 -- set once the assembly mass is known
+	drive.Parent = chassis
+
+	-- World-relative, so X and Z stay 0 (the matatu can't roll or pitch over) and Y is the yaw.
+	local turn = Instance.new("AngularVelocity")
+	turn.Name = "Turn"
+	turn.Attachment0 = rootAttachment
+	turn.RelativeTo = Enum.ActuatorRelativeTo.World
+	turn.AngularVelocity = Vector3.zero
+	turn.MaxTorque = 0
+	turn.ReactionTorqueEnabled = false
+	turn.Parent = chassis
 
 	local cosmetics = Instance.new("Folder")
 	cosmetics.Name = "Cosmetics"
@@ -365,14 +369,22 @@ local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): V
 
 	local label = buildLabel(body, owner)
 
-	-- Tuning the client drive controller reads.
-	model:SetAttribute("MaxSpeed", tier.maxSpeed)
-	model:SetAttribute("Torque", tier.torque)
-	model:SetAttribute("DriveSign", DRIVE_SIGN)
-	model:SetAttribute("MaxSteer", MAX_STEER_DEGREES)
+	-- Handling the client drive controller reads.
+	model:SetAttribute("TopSpeed", tier.topSpeed)
+	model:SetAttribute("ReverseSpeed", tier.reverseSpeed)
+	model:SetAttribute("Acceleration", tier.acceleration)
+	model:SetAttribute("BrakeDeceleration", tier.brakeDeceleration)
+	model:SetAttribute("TurnRate", tier.turnRate)
+	model:SetAttribute("TurnRadius", tier.turnRadius)
+	model:SetAttribute("Wheelbase", axleZ * 2)
 	model:SetAttribute("WheelRadius", WHEEL_RADIUS)
+	model:SetAttribute("RideHeight", WHEEL_RADIUS - WHEEL_Y)
 
 	model.Parent = vehiclesFolder
+
+	local mass = chassis.AssemblyMass
+	drive.MaxForce = mass * PARK_FORCE
+	turn.MaxTorque = mass * LEVEL_TORQUE
 
 	return {
 		owner = owner,
@@ -381,8 +393,10 @@ local function buildMatatu(owner: Player, tier: VehicleTier, spawnAt: CFrame): V
 		chassis = chassis,
 		body = body,
 		seat = seat,
-		rearMotors = rearMotors,
-		steerServos = steerServos,
+		drive = drive,
+		turn = turn,
+		parked = true,
+		lastUnstick = 0,
 		cosmetics = cosmetics,
 		label = label,
 		ledParts = {},
@@ -765,19 +779,22 @@ local function step(dt: number)
 		local seat = record.seat
 		local tier = record.tier
 		local driving = seat.Occupant ~= nil
-		local speed = record.chassis.AssemblyLinearVelocity.Magnitude
-		local topSpeed = tier.maxSpeed * WHEEL_RADIUS
+		local velocity = record.chassis.AssemblyLinearVelocity
+		local speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude -- falling doesn't count
+		local topSpeed = tier.topSpeed
 
-		-- While someone drives, the driver's client owns the physics and runs the motors
-		-- (Controllers/Drive.luau). Parked matatus get the handbrake from here.
-		if not driving then
-			for _, motor in record.rearMotors do
-				motor.AngularVelocity = 0
-				motor.MotorMaxTorque = tier.torque * 0.6
-			end
-			for _, servo in record.steerServos do
-				servo.TargetAngle = 0
-			end
+		-- While someone drives, their client owns the physics and sets the movers every frame
+		-- (Controllers/Drive.luau). An unattended matatu gets the parking brake from here: hold
+		-- still and stay level. Written only on the transition, so it doesn't spam replication.
+		if driving then
+			record.parked = false
+		elseif not record.parked then
+			record.parked = true
+			local mass = record.chassis.AssemblyMass
+			record.drive.PlaneVelocity = Vector2.zero
+			record.drive.MaxForce = mass * PARK_FORCE
+			record.turn.AngularVelocity = Vector3.zero
+			record.turn.MaxTorque = mass * LEVEL_TORQUE
 		end
 
 		-- Anti-exploit: impossible speed cancels the trip.
@@ -826,6 +843,88 @@ function VehicleService.init(registry: any)
 	vehiclesFolder.Parent = workspace
 end
 
+local function flatten(v: Vector3): Vector3
+	local flat = Vector3.new(v.X, 0, v.Z)
+	return if flat.Magnitude > 0.05 then flat.Unit else Vector3.new(0, 0, -1)
+end
+
+-- Ground height under a point, ignoring every matatu and character.
+local function groundY(position: Vector3, ignore: { Instance }): number
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = ignore
+	local hit = workspace:Raycast(position + Vector3.new(0, 60, 0), Vector3.new(0, -200, 0), params)
+	return if hit then hit.Position.Y else 0
+end
+
+-- Closest point on the road centre line and the road's direction there (pointing the way the
+-- matatu already faces).
+local function nearestRoadPoint(position: Vector3, facing: Vector3): (Vector3, Vector3)
+	local best, bestDir, bestDistance = World.RoadPath[1], Vector3.new(1, 0, 0), math.huge
+	for i = 1, #World.RoadPath - 1 do
+		local a, b = World.RoadPath[i], World.RoadPath[i + 1]
+		local ab = Vector3.new(b.X - a.X, 0, b.Z - a.Z)
+		local t = math.clamp(Vector3.new(position.X - a.X, 0, position.Z - a.Z):Dot(ab) / ab:Dot(ab), 0, 1)
+		local point = a + ab * t
+		local distance = (Vector3.new(position.X, 0, position.Z) - Vector3.new(point.X, 0, point.Z)).Magnitude
+		if distance < bestDistance then
+			best, bestDistance = point, distance
+			bestDir = if ab.Unit:Dot(facing) >= 0 then ab.Unit else -ab.Unit
+		end
+	end
+	return best, bestDir
+end
+
+-- Put a stuck matatu back on its wheels: level, slightly back from whatever it hit, or on the
+-- nearest bit of road if every nearby spot overlaps a building. Passengers stay aboard.
+local function unstick(record: VehicleRecord)
+	local chassis = record.chassis
+	local ignore: { Instance } = { vehiclesFolder }
+	for _, other in Players:GetPlayers() do
+		if other.Character then
+			table.insert(ignore, other.Character)
+		end
+	end
+	local crowds = workspace:FindFirstChild("Crowds")
+	if crowds then
+		table.insert(ignore, crowds)
+	end
+
+	local facing = flatten(chassis.CFrame.LookVector)
+	local here = chassis.Position
+	local rideHeight = (record.model:GetAttribute("RideHeight") :: number?) or 2.4
+	local hull = Vector3.new(record.tier.width + 2, record.tier.height, record.tier.length + 2)
+
+	local overlap = OverlapParams.new()
+	overlap.FilterType = Enum.RaycastFilterType.Exclude
+	overlap.FilterDescendantsInstances = ignore
+
+	local function fits(position: Vector3, look: Vector3): CFrame?
+		local y = groundY(position, ignore)
+		-- Check the space the body occupies, starting just above the ground so roads don't count.
+		local centre = Vector3.new(position.X, y + 1 + hull.Y / 2, position.Z)
+		local box = CFrame.lookAt(centre, centre + look)
+		if #workspace:GetPartBoundsInBox(box, hull, overlap) > 0 then
+			return nil
+		end
+		local at = Vector3.new(position.X, y + rideHeight + 0.6, position.Z)
+		return CFrame.lookAt(at, at + look)
+	end
+
+	local target = fits(here, facing) or fits(here - facing * 8, facing) or fits(here + facing * 8, facing)
+	if not target then
+		local point, direction = nearestRoadPoint(here, facing)
+		local y = groundY(point, ignore)
+		local at = Vector3.new(point.X, y + rideHeight + 0.6, point.Z)
+		target = CFrame.lookAt(at, at + direction)
+	end
+
+	record.model:PivotTo(target :: CFrame)
+	chassis.AssemblyLinearVelocity = Vector3.zero
+	chassis.AssemblyAngularVelocity = Vector3.zero
+	record.upsideDownTime = 0
+end
+
 function VehicleService.start()
 	Net.func("SpawnVehicle").OnServerInvoke = function(player: Player)
 		if not spawnLimiter:allow(player) then
@@ -844,6 +943,20 @@ function VehicleService.start()
 		if horn and horn:IsA("Sound") then
 			horn:Play()
 		end
+	end)
+
+	Net.event("Unstick").OnServerEvent:Connect(function(player: Player)
+		local record = records[player]
+		if not record or not VehicleService.isDriving(player) then
+			return
+		end
+		local now = os.clock()
+		if now - record.lastUnstick < UNSTICK_COOLDOWN then
+			Net.event("Notify"):FireClient(player, "Unstick is cooling down", "info")
+			return
+		end
+		record.lastUnstick = now
+		unstick(record)
 	end)
 
 	-- Get back into your own matatu (after hopping out with Space, for example).

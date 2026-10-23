@@ -54,6 +54,7 @@ For type checking in VS Code, install the **Luau Language Server** extension. Th
 | Horn | H | Horn button |
 | Get out | Space | Jump button |
 | Get back in | F (walk up to your matatu) | Tap the Drive prompt (gamepad: Y) |
+| Unstick (reset onto the road) | R | Unstick button (gamepad: D-pad up) |
 
 ## Project layout
 
@@ -92,8 +93,8 @@ The client never sends amounts. The server:
 
 ## Things to tune or add first
 
-- **Driving.** Input and motors run on the driver's client in `src/client/Controllers/Drive.luau` (reverse speed, brake strength, gauge). If matatus drive backwards, set `DRIVE_SIGN = 1` at the top of `VehicleService.luau`.
-- **Feel.** Torque and top speed are per tier in `Config/Vehicles.luau`. Steering lock is `MAX_STEER_DEGREES`.
+- **Driving.** Handling is arcade-style: the matatu glides on four invisible frictionless skids while a LinearVelocity sets its speed and an AngularVelocity sets its yaw and keeps it level. The rules (acceleration, braking, reverse, turning circle, getting off walls) live in `src/shared/DriveModel.luau`, which has no Roblox dependencies and is unit-tested by `just test`. `Controllers/Drive.luau` feeds it input and applies the result.
+- **Feel.** Top speed, reverse speed, acceleration, braking, turn rate and turning radius are per tier in `Config/Vehicles.luau`. Grip and in-air control are `GRIP_FORCE` and `AIR_FORCE` in `Controllers/Drive.luau`.
 - **Audio.** Paste licensed sound asset ids into `HORN_SOUND_ID` and `MUSIC_SOUND_ID` in `VehicleService.luau`.
 - **Art.** Swap the generated box matatu for a Blender mesh. Keep the `Chassis`, `Body` and `DriverSeat` names, or update `buildMatatu`.
 - **Next phases:** Highway district and hired NPC drivers, then saccos and route wars, then rebirth and events (see the design doc).
