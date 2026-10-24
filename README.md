@@ -114,3 +114,7 @@ To add a road, add its junctions to `Nodes` and an entry to `Roads`. To add a st
 The Rojo CLI (`rokit.toml`) and the Rojo plugin in Studio must be the same version (7.7.x), or Studio silently keeps running old scripts. When the server starts with current code, Output shows `[World] built Nairobi: N parts in X s` just before `[Matatu Empire] server ready`. If that line is missing, run `rokit install`, restart `just serve`, and click **Rojo → Connect** in Studio (it should say Connected).
 
 Studio doesn't reload `MatatuEmpire.rbxl` if you rebuild it with `just build` while the place is open. Close the place first, or sync with `just serve` instead.
+
+## License
+
+[MIT](LICENSE) © 2026 MikeTeddyOmondi
