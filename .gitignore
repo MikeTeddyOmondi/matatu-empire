@@ -7,3 +7,4 @@ sourcemap.json
 **/*.DS_Store
 
 .luau-lsp/
+.env

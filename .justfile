@@ -1,6 +1,7 @@
 # Matatu Empire task runner. Run `just` to see every command.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
+set dotenv-load := true
 
 project := "default.project.json"
 place := "MatatuEmpire.rbxl"
@@ -66,6 +67,18 @@ ci: fmt-check lint check test
 # Regenerate the matatu mesh in assets/ (needs python3 with numpy)
 mesh:
     python3 tools/make_matatu_mesh.py assets
+
+# Build and publish the place to Roblox with Rojo (needs ROBLOX_API_KEY, ROBLOX_UNIVERSE_ID, ROBLOX_PLACE_ID in .env)
+publish: build
+    @[ -n "${ROBLOX_API_KEY:-}" ] && [ -n "${ROBLOX_UNIVERSE_ID:-}" ] && [ -n "${ROBLOX_PLACE_ID:-}" ] || { echo "Set ROBLOX_API_KEY, ROBLOX_UNIVERSE_ID and ROBLOX_PLACE_ID in .env (see .env.example)"; exit 1; }
+    rojo upload {{ project }} --api_key "$ROBLOX_API_KEY" --universe_id "$ROBLOX_UNIVERSE_ID" --asset_id "$ROBLOX_PLACE_ID"
+
+# Upload the built place straight to the Open Cloud API; version = Saved (draft) or Published (live)
+publish-api version="Published": build
+    @[ -n "${ROBLOX_API_KEY:-}" ] && [ -n "${ROBLOX_UNIVERSE_ID:-}" ] && [ -n "${ROBLOX_PLACE_ID:-}" ] || { echo "Set ROBLOX_API_KEY, ROBLOX_UNIVERSE_ID and ROBLOX_PLACE_ID in .env (see .env.example)"; exit 1; }
+    curl -fsS -X POST "https://apis.roblox.com/universes/v1/$ROBLOX_UNIVERSE_ID/places/$ROBLOX_PLACE_ID/versions?versionType={{ version }}" \
+        -H "x-api-key: $ROBLOX_API_KEY" -H "Content-Type: application/octet-stream" --data-binary @{{ place }}
+    @echo
 
 # Remove generated files (built place, sourcemap, cached type definitions)
 clean:

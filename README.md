@@ -115,6 +115,15 @@ The Rojo CLI (`rokit.toml`) and the Rojo plugin in Studio must be the same versi
 
 Studio doesn't reload `MatatuEmpire.rbxl` if you rebuild it with `just build` while the place is open. Close the place first, or sync with `just serve` instead.
 
+## Publishing to Roblox
+
+1. Create the experience once: in Studio, **File → Publish to Roblox**, then note its Universe ID and Place ID.
+2. Create an Open Cloud API key (Creator Dashboard → Open Cloud → API Keys) with the **universe-places** API and **Write** access to this experience.
+3. `cp .env.example .env` and fill in the key and both IDs. `.env` is git-ignored.
+4. `just publish` builds the place with Rojo and uploads it as the live version. `just publish-api Saved` uploads a draft instead, through the Open Cloud API directly.
+
+The upload replaces the whole place with what the Rojo project builds. Anything you only added in Studio (for example an imported matatu mesh in `ReplicatedStorage.Assets`) is lost unless it's also in the project.
+
 ## License
 
 [MIT](LICENSE) © 2026 MikeTeddyOmondi
