@@ -68,6 +68,10 @@ ci: fmt-check lint check test
 mesh:
     python3 tools/make_matatu_mesh.py assets
 
+# Regenerate the store icon, logo and key art in assets/store (needs python3 with numpy and Pillow)
+store-art:
+    python3 tools/make_store_art.py assets/store
+
 # Build and publish the place to Roblox with Rojo (needs ROBLOX_API_KEY, ROBLOX_UNIVERSE_ID, ROBLOX_PLACE_ID in .env)
 publish: build
     @[ -n "${ROBLOX_API_KEY:-}" ] && [ -n "${ROBLOX_UNIVERSE_ID:-}" ] && [ -n "${ROBLOX_PLACE_ID:-}" ] || { echo "Set ROBLOX_API_KEY, ROBLOX_UNIVERSE_ID and ROBLOX_PLACE_ID in .env (see .env.example)"; exit 1; }
