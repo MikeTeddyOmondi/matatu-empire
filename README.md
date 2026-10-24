@@ -124,6 +124,24 @@ Studio doesn't reload `MatatuEmpire.rbxl` if you rebuild it with `just build` wh
 
 The upload replaces the whole place with what the Rojo project builds. Anything you only added in Studio (for example an imported matatu mesh in `ReplicatedStorage.Assets`) is lost unless it's also in the project.
 
+## Store page: icon, thumbnails and video
+
+Uploaded in the Creator Dashboard under the experience's start place (other places inherit them).
+
+- **Icon:** `assets/store/icon.png` (512x512). Regenerate with `just store-art`.
+- **Thumbnails (16:9, 1920x1080, up to 10 with videos):** Roblox wants imagery that shows the real game, so capture them in Studio. `assets/store/key-art.png` is a title card made from the game's matatu model (the imported mesh, see "Adding the 3D matatu model"); use it as one thumbnail alongside in-game shots. `assets/store/logo.png` is a transparent wordmark to place on screenshots, sparingly.
+- **Video:** must be real gameplay, no voice-over or music with lyrics, 3 uploads a month, reviewed before it shows.
+
+Capturing in Studio: untick Workspace.StreamingEnabled (don't save it), press Play, then:
+
+| Key | Does |
+| --- | --- |
+| P | Next photo shot with the HUD hidden (Railways stage, Uhuru Highway, KICC, Westlands, Kibera, Kawangware, Ngong Road, city overview). Screenshot it. |
+| K | Fly-through of those shots, about 40 s. Screen-record it (QuickTime: File > New Screen Recording). |
+| O | Back to the normal camera and HUD. |
+
+For the video, mix the fly-through with real driving: touting at a stage, a trip across town, an upgrade in the garage. Keep the bottom of thumbnails clear; player counts cover it. These keys only work in Studio.
+
 ## License
 
 [MIT](LICENSE) © 2026 MikeTeddyOmondi

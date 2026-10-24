@@ -10,6 +10,7 @@ local Garage = require(Controllers:WaitForChild("Garage") :: ModuleScript) :: an
 local Waypoint = require(Controllers:WaitForChild("Waypoint") :: ModuleScript) :: any
 local Drive = require(Controllers:WaitForChild("Drive") :: ModuleScript) :: any
 local Minimap = require(Controllers:WaitForChild("Minimap") :: ModuleScript) :: any
+local Cinematic = require(Controllers:WaitForChild("Cinematic") :: ModuleScript) :: any
 
 -- Order matters: Hud owns the action buttons that Tout and Garage hook into.
 Hud.start()
@@ -18,4 +19,5 @@ Garage.start()
 Waypoint.start()
 Drive.start()
 Minimap.start()
+Cinematic.start() -- Studio only
 State.start()
