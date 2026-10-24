@@ -108,3 +108,9 @@ The client never sends amounts. The server:
 To add a road, add its junctions to `Nodes` and an entry to `Roads`. To add a stage, put a node on a road, add it to `Stages` and pair it in `Routes`. `just test` checks every stage is reachable, every route has a return, and shelters and spawns sit where they should.
 
 ![Road network](assets/nairobi-map.png)
+
+## Troubleshooting: changes don't show up in Studio
+
+The Rojo CLI (`rokit.toml`) and the Rojo plugin in Studio must be the same version (7.7.x), or Studio silently keeps running old scripts. When the server starts with current code, Output shows `[World] built Nairobi: N parts in X s` just before `[Matatu Empire] server ready`. If that line is missing, run `rokit install`, restart `just serve`, and click **Rojo → Connect** in Studio (it should say Connected).
+
+Studio doesn't reload `MatatuEmpire.rbxl` if you rebuild it with `just build` while the place is open. Close the place first, or sync with `just serve` instead.
