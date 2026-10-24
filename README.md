@@ -129,6 +129,7 @@ The upload replaces the whole place with what the Rojo project builds. Anything 
 Uploaded in the Creator Dashboard under the experience's start place (other places inherit them).
 
 - **Icon:** `assets/store/icon.png` (512x512). Regenerate with `just store-art`.
+- **Where the files live:** `assets/store/` (icon, logo, key art), `assets/store/thumbnails/` (numbered in upload order) and `assets/store/video/` (`gameplay.mp4`).
 - **Thumbnails (16:9, 1920x1080, up to 10 with videos):** Roblox wants imagery that shows the real game, so capture them in Studio. `assets/store/key-art.png` is a title card made from the game's matatu model (the imported mesh, see "Adding the 3D matatu model"); use it as one thumbnail alongside in-game shots. `assets/store/logo.png` is a transparent wordmark to place on screenshots, sparingly.
 - **Video:** must be real gameplay, no voice-over or music with lyrics, 3 uploads a month, reviewed before it shows.
 
